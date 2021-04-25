@@ -1,0 +1,180 @@
+esphome:
+  name: doorlock
+  platform: ESP8266
+  board: nodemcuv2
+
+wifi:
+  ssid: "iot"
+  password: ""
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Doorlock Fallback Hotspot"
+    password: ""
+
+captive_portal:
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: ""
+  services:
+    - service: control_stepper
+      variables:
+        target: int
+      then:
+        - stepper.set_target:
+            id: my_stepper
+            target: !lambda 'return target;'
+
+ota:
+  password: ""
+  
+stepper:
+  - platform: a4988
+    id: my_stepper
+    step_pin: D0
+    dir_pin: D1
+    max_speed: 500000 steps/s
+# full rotation steps = 193100
+
+
+uart:
+  tx_pin: D7
+  rx_pin: D6
+  baud_rate: 57600
+
+rxxx:
+  sensing_pin: D5
+  on_finger_scan_matched:
+    - rxxx.aura_led_control:
+        state: BREATHING
+        speed: 200
+        color: BLUE
+        count: 1
+    - text_sensor.template.publish:
+        id: rxxx_state
+        state: "Authorized finger"
+  on_finger_scan_unmatched:
+    - rxxx.aura_led_control:
+        state: FLASHING
+        speed: 25
+        color: RED
+        count: 2
+    - text_sensor.template.publish:
+        id: rxxx_state
+        state: "Unauthorized finger"
+  on_enrollment_scan:
+    - rxxx.aura_led_control:
+        state: FLASHING
+        speed: 25
+        color: BLUE
+        count: 2
+    - rxxx.aura_led_control:
+        state: ALWAYS_ON
+        speed: 0
+        color: PURPLE
+        count: 0
+  on_enrollment_done:
+    - rxxx.aura_led_control:
+        state: BREATHING
+        speed: 100
+        color: BLUE
+        count: 2
+    - text_sensor.template.publish:
+        id: rxxx_state
+        state: "Enrolled fingerprint"
+  on_enrollment_failed:
+    - rxxx.aura_led_control:
+        state: FLASHING
+        speed: 25
+        color: RED
+        count: 4
+    - text_sensor.template.publish:
+        id: rxxx_state
+        state: "Failed to enroll fingerprint"
+
+binary_sensor:
+  - platform: rxxx
+    id: rxxx_enrolling
+    name: "Rxxx Enrolling"
+
+text_sensor:
+  - platform: template
+    id: rxxx_state
+    name: "Rxxx State"
+  - platform: template
+    id: lock_status
+    name: "Lock Status"
+
+sensor:
+  - platform: rxxx
+    fingerprint_count:
+      name: "Rxxx Fingerprint Count"
+    last_finger_id:
+      name: "Rxxx Last Finger ID"
+    last_confidence:
+      name: "Rxxx Last Confidence"
+  - platform: homeassistant
+    id: hass_input_num
+    entity_id: input_number.rxxx_2
+    accuracy_decimals: 0
+
+switch:
+  - platform: template
+    name: "Rxxx Enroll"
+    icon: "mdi:account-plus"
+    lambda: !lambda "return id(rxxx_enrolling).state;"
+    turn_on_action:
+      - rxxx.aura_led_control:
+          state: ALWAYS_ON
+          speed: 0
+          color: PURPLE
+          count: 0
+      - rxxx.enroll: !lambda "return id(hass_input_num).state;"
+    turn_off_action:
+      - rxxx.cancel_enroll:
+  - platform: template
+    name: "Rxxx Delete Fingerprint"
+    icon: "mdi:account-minus"
+    turn_on_action:
+      - rxxx.delete: !lambda "return id(hass_input_num).state;"
+  - platform: template
+    name: "Rxxx Clear DB"
+    icon: "mdi:nuke"
+    turn_on_action:
+      - rxxx.delete_all:
+  - platform: template
+    name: "Unlock"
+    turn_on_action:
+      - text_sensor.template.publish:
+          id: rxxx_state
+          state: "Unlocking"
+      - text_sensor.template.publish:
+          id: lock_status
+          state: "Unlocking"
+      - stepper.report_position:
+          id: my_stepper
+          position: 0
+      - stepper.set_target:
+          id: my_stepper
+          target: 32000
+      
+  - platform: template
+    name: "Lock"
+    turn_on_action:
+      - stepper.report_position:
+          id: my_stepper
+          position: 0
+      - stepper.set_target:
+          id: my_stepper
+          target: -32000
+      - text_sensor.template.publish:
+          id: rxxx_state
+          state: "Waiting"  
+      - delay: 10s
+      - text_sensor.template.publish:
+          id: lock_status
+          state: "Waiting"

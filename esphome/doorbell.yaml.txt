@@ -1,0 +1,131 @@
+esphome:
+  name: doorbell
+  platform: ESP32
+  board: esp-wrover-kit
+
+wifi:
+  ssid: "iot"
+  password: ""
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Doorbell Fallback Hotspot"
+    password: ""
+
+captive_portal:
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: ""
+
+ota:
+  password: ""
+
+
+esp32_camera:
+  external_clock:
+    pin: GPIO0
+    frequency: 10MHz
+  i2c_pins:
+    sda: GPIO26
+    scl: GPIO27
+  data_pins: [GPIO5, GPIO18, GPIO19, GPIO21, GPIO36, GPIO39, GPIO34, GPIO35]
+  vsync_pin: GPIO25
+  href_pin: GPIO23
+  pixel_clock_pin: GPIO22
+  power_down_pin: GPIO32
+
+  # Image settings
+  name: Doorbell Cam
+  resolution: 1024x768
+  jpeg_quality: 10
+  idle_framerate: 1 fps
+  max_framerate: 5 fps
+  
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO13
+      inverted: True
+    name: Doorbell Button
+    on_press:
+      then:
+        - switch.turn_on: buzzer
+    on_release:
+      then:
+        - switch.turn_off: buzzer
+    
+switch:
+  - platform: gpio
+    id: buzzer
+    pin:
+      number: GPIO15
+      inverted: no
+      
+    
+i2c:
+  sda: GPIO14
+  scl: GPIO15
+  scan: False    
+  
+font:
+  - file: 'DroidSans.ttf'
+    id: font1
+    size: 22  
+  - file: 'DroidSans.ttf'
+    id: font1sm
+    size: 18
+    
+text_sensor:
+  - platform: homeassistant
+    entity_id: sensor.doorbell_text
+    id: doorbell_text
+    on_value:
+      then:
+          - display.page.show: !lambda |-
+              if (id(doorbell_text).state == "1") {
+                return id(page1);
+              }
+              if (id(doorbell_text).state == "2") {
+                return id(page2);
+              }
+              if (id(doorbell_text).state == "3") {
+                return id(page3);
+              }else{
+                return id(page4);
+              }
+          - component.update: my_display
+  - platform: homeassistant
+    entity_id: sensor.doorbell_display_code
+    id: doorbell_display_code
+    
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    reset_pin: GPIO0
+    address: 0x3C
+    id: my_display
+    pages:
+      - id: page1
+        lambda: |-
+          it.printf(64, 0, id(font1), TextAlign::TOP_CENTER, "No. 8");
+          it.printf(64, 24, id(font1), TextAlign::TOP_CENTER, "Door Bell");
+      - id: page2
+        lambda: |-
+          it.printf(64, 0, id(font1sm), TextAlign::TOP_CENTER, "One");
+          it.printf(64, 20, id(font1sm), TextAlign::TOP_CENTER, "Moment");
+          it.printf(64, 40, id(font1), TextAlign::TOP_CENTER, "Please...");
+      - id: page3
+        lambda: |-
+          it.printf(64, 0, id(font1sm), TextAlign::TOP_CENTER, "Sorry,");
+          it.printf(64, 20, id(font1sm), TextAlign::TOP_CENTER, "None is");
+          it.printf(64, 40, id(font1sm), TextAlign::TOP_CENTER, "Home!");
+      - id: page4
+        lambda: |-
+          it.printf(64, 0, id(font1sm), TextAlign::TOP_CENTER, "Welcome");
+          it.printf(64, 20, id(font1sm), TextAlign::TOP_CENTER, "Home");
+          it.printf(64, 40, id(font1), TextAlign::TOP_CENTER, "%s!", id(doorbell_text).state.c_str());
